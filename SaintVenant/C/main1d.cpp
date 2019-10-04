@@ -30,7 +30,7 @@ void init_solution(Eigen::ArrayBase<Derived>& V, const Domain& domain) {
 void compute_flux(Eigen::Array<double, 2, 1>& flux, double V1, double V2, double tol)
 {
     flux(0) = V2;
-    if(std::abs(V1) < tol)
+    if(V1 < tol)
         flux(1) = 0.;
     else
         flux(1) = V2 * V2 / V1 + 0.5 * 9.81 * V1 * V1;
@@ -45,15 +45,23 @@ void scheme_LaxFriedrich(ArrayType2d& V, const ArrayType2d& Vold,
     std::size_t Nx = lambdas.cols();
     double Cx = dt / dx;
 
-    Eigen::Array<double, 2, 1> flux, flux1, flux2;
+    Eigen::Array<double, 2, 1> flux1, flux2;
+    double flux;
     compute_flux(flux1, Vold(0, 0), Vold(1, 0), tol);
 
     V(1, 0) += Cx * (flux1(1) - lambdas(0) * Vold(1, 0));
     for(std::size_t i=0; i<Nx-1; ++i) {
         compute_flux(flux2, Vold(0, i+1), Vold(1, i+1), tol);
-        flux = 0.5 * Cx * ((flux2 + flux1) - std::max(lambdas(i), lambdas(i+1)) * (Vold.col(i+1) - Vold.col(i)));
-        V.col(i) -= flux;
-        V.col(i+1) += flux;
+        double lmbd = std::max(lambdas(i), lambdas(i+1));
+        
+        flux = 0.5 * Cx * ((flux2(0) + flux1(0)) - lmbd * (Vold(0, i+1) - Vold(0, i)));
+        V(0, i) -= flux;
+        V(0, i+1) += flux;
+
+        flux = 0.5 * Cx * ((flux2(1) + flux1(1)) - lmbd * (Vold(1, i+1) - Vold(1, i)));
+        V(1, i) -= flux;
+        V(1, i+1) += flux;
+        
         flux1.swap(flux2);
     }
     V(1, Nx-1) -= Cx * (flux1(1) + lambdas(Nx-1) * Vold(1, Nx-1));
@@ -62,23 +70,18 @@ void scheme_LaxFriedrich(ArrayType2d& V, const ArrayType2d& Vold,
 
 
 template<typename ArrayType1d, typename ArrayType2d>
-double updateCFL(ArrayType1d& lambdas, const ArrayType2d& V,
-                 double dx, double tol)
+void update_eigenvalues(ArrayType1d& lambdas, const ArrayType2d& V, double tol)
 {
     std::size_t Nx = lambdas.cols();
-    double M = 0.;
 
     for(std::size_t i=0; i<Nx; ++i) {
-        if(std::abs(V(0, i)) < tol) {
+        if(V(0, i) < tol) {
             lambdas(i) = 0.;
         }
         else {
             lambdas(i) = std::abs(V(1, i) / V(0, i)) + std::sqrt(9.81 * V(0, i));
-            M = std::max(M, lambdas(i));
         }
     }
-
-    return 0.5 * dx / M;
 }
 
 
@@ -86,11 +89,13 @@ template<typename ArrayType1d, typename ArrayType2d>
 double update_to_time(ArrayType2d& V, ArrayType2d& Vold, ArrayType1d& lambdas,
                       double t, double tframe, double dx, double tol)
                       
-{    
+{
+    double dt = 0;
     while(t < tframe) {
-        double dt = std::min(updateCFL(lambdas, V, dx, tol),
-                             tframe - t);
         Vold = V;
+        update_eigenvalues(lambdas, Vold, tol);
+        dt = std::min(0.5 * dx / lambdas.maxCoeff(), tframe - t);
+
         scheme_LaxFriedrich(V, Vold, lambdas, dt, dx, tol);
         
         t += dt;
