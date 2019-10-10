@@ -1,5 +1,5 @@
 # perf or animation ?
-const INFO = true
+const INFO = false
 const record_animation = false
 
 using Printf
@@ -55,7 +55,7 @@ end
 
 # initialization
 const domain = Domain(0., 1.)
-const Nx = 32768
+const Nx = 2^14
 
 # GPU parameters
 const num_gpu_threads = 256
@@ -69,7 +69,7 @@ println("number of GPU blocks = ", num_gpu_blocks)
 println("number of GPU threads per block = ", num_gpu_threads)
 
 # loop in time
-const T = 1e-3
+const T = 2.0
 const dx = (domain.x_end - domain.x_start) / Nx
 
 # tolerance for dry region
@@ -104,6 +104,7 @@ let t=0
     ker_scheme = cufunction(kernel_LaxFriedrich!, ker_tt_scheme)
     
     function update_to_time(tframe::Float64)
+        n = 0
         while(t < tframe)
             # update the eigenvalues (first time iteration = initialization)
             #CuArrays.@sync begin
@@ -129,8 +130,10 @@ let t=0
             #end
 
             t += dt
+            n += 1
             INFO && @printf("\t%.5f / %.5f\n", t, tframe)
         end
+        println("Number of iterations: ", n)
     end    
 
     print("Warming up... ")
@@ -142,8 +145,8 @@ let t=0
     copyto!(V_d, 1, V, 1, length(V))
 
     println("Initial time t = ", t)
-    CUDAdrv.@profile update_to_time(T)
-    #CuArrays.@time update_to_time(T)
+    #CUDAdrv.@profile update_to_time(T)
+    CuArrays.@time update_to_time(T)
     println("End of simulation, t = ", t)
 
     

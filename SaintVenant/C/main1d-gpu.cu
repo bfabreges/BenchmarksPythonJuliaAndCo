@@ -50,22 +50,22 @@ double update_to_time(double t, double tframe, double dx,
                       double* lmb_max, ArrayType& lmax,
                       double tol, std::size_t Nx)
 {
-    cudaStream_t stream_copy;
-    cudaStreamCreate(&stream_copy);
+    std::size_t n = 0;
     while(t < tframe) {
         update_eigenvalues<<<NUM_BLOCKS, NUM_THREADS>>>(lambdas, V1, V2, tol, Nx);
         double Cmax = reduce<NBLOCKS_MAX, NUM_THREADS, SMEM_MAX, ArrayType>(lambdas, lmb_max, Nx, lmax);
         double dt = std::min(0.5 * dx / Cmax, tframe - t);
         
-        cudaMemcpyAsync(Vold1, V1, Nx * sizeof(double), cudaMemcpyDeviceToDevice, stream_copy);
-        cudaMemcpyAsync(Vold2, V2, Nx * sizeof(double), cudaMemcpyDeviceToDevice, stream_copy);
+        cudaMemcpy(Vold1, V1, Nx * sizeof(double), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(Vold2, V2, Nx * sizeof(double), cudaMemcpyDeviceToDevice);
         
         scheme_LaxFriedrich<<<NUM_BLOCKS, NUM_THREADS, 3*(NUM_THREADS + 2) * sizeof(double)>>>(V1, V2, Vold1, Vold2, lambdas, dt, dx, tol, Nx);
         
         t += dt;
+        ++n;
     }
 
-    cudaStreamDestroy(stream_copy);
+    std::cout << "Number of iterations:" << n << std::endl;
     return t;
 }
 
@@ -73,7 +73,7 @@ double update_to_time(double t, double tframe, double dx,
 
 int main() {
     constexpr Domain domain(0., 1.);
-    constexpr std::size_t Nx = 32768;
+    constexpr std::size_t Nx = 65536;
 
     std::modulus<std::size_t> mod;
     
@@ -83,7 +83,7 @@ int main() {
     constexpr std::size_t nblocks_max = mod(num_gpu_blocks, 2) == 0 ? num_gpu_blocks / 2 : num_gpu_blocks / 2 + 1;
     constexpr std::size_t smem_max = num_gpu_threads <= 32 ? 64 * sizeof(double) : num_gpu_threads * sizeof(double);
 
-    constexpr double T = 1e-10;
+    constexpr double T = 2.0;
     constexpr double dx = (domain.x_end - domain.x_start) / Nx;
     
     constexpr double tol = 1e-15;
