@@ -2,6 +2,7 @@ import numpy as np
 import math
 from numba import cuda, njit, float64, int32
 import time
+import socket
 
 
 
@@ -146,7 +147,6 @@ def copy_device_to_device(d_a, d_b):
             
 
 def update_to_time(t, tfinal, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nblocks, nblocks_max, nthreads):
-    n = 0
     while t < tfinal:
         #t_start = time.time()
         copy_device_to_device[nblocks, nthreads, 0, 0](d_Vold, d_V)
@@ -172,10 +172,8 @@ def update_to_time(t, tfinal, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nbl
         #t_end = time.time()
         #print(f"Lax-Friedrich: {t_end - t_start}")
 
-        n += 1
         t += dt
 
-    print(f"Number of iterations: {n}")
     return t
 
 
@@ -183,50 +181,64 @@ cuda.detect()
 print()
 
 domain = np.array([0, 1])
-Nx = 2**14
-
-nthreads = 256
-
-nblocks = (Nx + (nthreads - 1)) // nthreads
-nblocks_max = (nblocks + 1) // 2
-
-smem_max = nthreads * np.dtype(np.float64).itemsize
-n_smem_elem = nthreads + 2
-smem_scheme = 3 * n_smem_elem * np.dtype(np.float64).itemsize
-
 T = 2.0
-dx = (domain[1] - domain[0]) / Nx
 
-t = 0.
-V = np.empty((Nx, 2), dtype=np.float64)
-init_solution(V, domain)
+nstart = 256
+nstep = 10
 
-d_V = cuda.to_device(V)
-d_Vold = cuda.device_array_like(d_V)
-d_lambdas = cuda.device_array(Nx, dtype=np.float64)
+with open("RunningOn" + socket.gethostname(), "w") as f:
+    for i in range(nstep):
+        Nx = nstart * 2**i
+        dx = (domain[1] - domain[0]) / Nx
 
-#lmax = np.empty(1, dtype=np.float64)
-#d_lmax = cuda.to_device(lmax)
-#run_max = cuda.Reduce(lambda a, b: max(a, b))  # too slow
-lmax = np.empty(nblocks_max, dtype=np.float64)
-d_lmax = cuda.to_device(lmax)
+        nthreads = 256
 
-tol = np.finfo(np.float64).eps
+        nblocks = (Nx + (nthreads - 1)) // nthreads
+        nblocks_max = (nblocks + 1) // 2
 
-print("Warming up...", end=" ")
-update_to_time(t, tol, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nblocks, nblocks_max, nthreads)
-print("Done")
+        smem_max = nthreads * np.dtype(np.float64).itemsize
+        n_smem_elem = nthreads + 2
+        smem_scheme = 3 * n_smem_elem * np.dtype(np.float64).itemsize
+
+        t = 0.
+        V = np.empty((Nx, 2), dtype=np.float64)
+
+        d_V = cuda.to_device(V)
+        d_Vold = cuda.device_array_like(d_V)
+        d_lambdas = cuda.device_array(Nx, dtype=np.float64)
+
+        #lmax = np.empty(1, dtype=np.float64)
+        #d_lmax = cuda.to_device(lmax)
+        #run_max = cuda.Reduce(lambda a, b: max(a, b))  # too slow
+        lmax = np.empty(nblocks_max, dtype=np.float64)
+        d_lmax = cuda.to_device(lmax)
+
+        tol = np.finfo(np.float64).eps
+
+        if i == 0:
+            init_solution(V, domain)
+            d_V.copy_to_device(V)
+            print("Warming up...", end=" ")
+            update_to_time(t, tol, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nblocks, nblocks_max, nthreads)
+            print("Done")
 
 
-init_solution(V, domain)
-d_V.copy_to_device(V)
-print(f"Initial time t = {t}")
-t_start = time.time()
-t = update_to_time(t, T, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nblocks, nblocks_max, nthreads)
-t_end = time.time()
-print(f"End of simulation, t = {t}")
-print(f"Elapsed time: {t_end - t_start}")
+        init_solution(V, domain)
+        
+        #print(f"Initial time t = {t}")
+        print(f"Running with N = {Nx} :", end=" ")
+        t_start = time.time()
+        #cuda.profile_start()
+        d_V.copy_to_device(V)
+        t = update_to_time(t, T, d_V, d_Vold, d_lambdas, d_lmax, lmax, dx, tol, nblocks, nblocks_max, nthreads)
+        d_V.copy_to_host(V)
+        #cuda.profile_stop()
+        t_end = time.time()
+        print(f"{t_end - t_start}")
+        #print(f"End of simulation, t = {t}")
+        #print(f"Elapsed time: {t_end - t_start}")
 
-d_V.copy_to_host(V)
-print(f"mean(h) = {np.mean(V[:, 0])}")
-np.savetxt("sol-cpu", V[:, 0])
+        #d_V.copy_to_host(V)
+        #print(f"mean(h) = {np.mean(V[:, 0])}")
+        #np.savetxt("sol-cpu", V[:, 0])
+        f.write(str(Nx) + "\t" + str(t_end - t_start) + "\n")

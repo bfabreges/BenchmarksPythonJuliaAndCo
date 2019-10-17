@@ -1,4 +1,4 @@
-#include "main1d-gpu-kernels.hpp"
+#include "main1d-kernels.hpp"
 
 
 __device__ inline double flux(const double V1, const double V2, const double tol) {

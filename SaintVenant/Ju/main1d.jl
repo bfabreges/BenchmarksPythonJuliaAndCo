@@ -1,11 +1,4 @@
-# perf or animation ?
-const INFO = false
-const record_animation = false
-
-
 using Printf
-#using Makie
-using Statistics
 using DelimitedFiles
 
 
@@ -98,62 +91,57 @@ end
 
 
 
+function update_to_time(V::Array{Float64, 2}, Vold::Array{Float64, 2}, lambdas::Array{Float64, 1},
+                        t::Float64, tframe::Float64, dx::Float64, tol::Float64)
+    while(t < tframe)
+        @. Vold = V
+        update_eigenvalues!(lambdas, Vold, tol)
+        dt = min(0.5 * dx / maximum(lambdas), tframe - t)
+        LaxFriedrich!(V, Vold, lambdas, dt, dx, tol)
+        t += dt
+    end
+end
+
+
 
 
 # initialization
 const domain = Domain(0., 1.)
-const Nx = 2^14
-
 
 # loop in time
 const T = 2.0
-const dx = (domain.x_end - domain.x_start) / Nx
 const tol = eps(Float64)
 
-let t=0
-    V = Array{Float64, 2}(undef, 2, Nx)
-    InitSolution!(V, domain)
+const nstart = 256
+const nstep = 10
+
+open("RunningOn" * gethostname(), "w") do file
+    for istep=0:nstep-1
+        Nx = nstart * 2^istep
+        dx = (domain.x_end - domain.x_start) / Nx
     
-    Vold = Array{Float64, 2}(undef, 2, Nx)
-    lambdas = Array{Float64, 1}(undef, Nx)
-
-    function update_to_time(tframe::Float64, tol)
-        while(t < tframe)
-            @. Vold = V
-            update_eigenvalues!(lambdas, Vold, tol)
-            dt = min(0.5 * dx / maximum(lambdas), tframe - t)
-            LaxFriedrich!(V, Vold, lambdas, dt, dx, tol)
-            t += dt
-            INFO && @printf("\t%.5f / %.5f\n", t, tframe)
+        V = Array{Float64, 2}(undef, 2, Nx)        
+        Vold = Array{Float64, 2}(undef, 2, Nx)
+        lambdas = Array{Float64, 1}(undef, Nx)
+        
+        if istep == 0
+            InitSolution!(V, domain)
+            print("Warming up... ")
+            update_to_time(V, Vold, lambdas, 0., eps(Float64), dx, tol)
+            println("Done")
         end
-    end
-
-    if record_animation
-        nframe_per_second = 1000
-        nframe = convert(Int64, ceil(nframe_per_second * T)) + 1
-
-        scene = Scene(resolution = (1920, 1080))
-        x = range(domain.x_start, stop=domain.x_end, length=Nx)
-
-        plt = lines!(scene, x, view(V, 1, :), color=:blue, linewidth=2)[end]
-        record(scene, "./height1d.mp4", range(t, stop=T, length=nframe), framerate=30) do tframe
-            println(tframe, " / ", T)
-            update_to_time(tframe, tol)
-            plt[2] = view(V, 1, :)
-        end
-    else
-        print("Warming up... ")
-        update_to_time(eps(Float64), tol)
-        println("Done")
-
+        
         t = 0
         InitSolution!(V, domain)
-
-        println("Initial time t = ", t)
-        @time update_to_time(T, tol)
-        println("End of simulation, t = ", t)
         
-        println("mean(h) = ", mean(V[1, :]))
-        writedlm("sol-cpu", V[1, :], "\n")
+        #println("Initial time t = ", t)
+        print("Running with N = ", Nx, " : ")
+        t = @elapsed update_to_time(V, Vold, lambdas, 0., T, dx, tol)
+        println(t, "s")
+        #println("End of simulation, t = ", t)
+        
+        #println("mean(h) = ", mean(V[1, :]))
+        #writedlm("sol-cpu", V[1, :], "\n")
+        write(file, string(Nx), "\t", string(t), "\n")
     end
 end

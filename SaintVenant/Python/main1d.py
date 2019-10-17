@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import socket
 
 eps64 = np.finfo(np.float64).eps
 
@@ -68,28 +69,36 @@ def update_to_time(tfinal):
     
 
 domain = np.array([0, 1])
-Nx = 2**12
-
 T = 2.0
-dx = (domain[1] - domain[0]) / Nx
+nstart = 256
+nstep = 10
 
-t = 0.
-V = np.empty((2, Nx))
-init_solution(V, domain)
 
-fmodel = np.empty_like(V)
-fluxes = np.empty((2, Nx-1))
-lambdas = np.empty(Nx)
-max_lambdas = np.empty(Nx-1)
+with open("RunningOn" + socket.gethostname(), "w") as f:
+    for i in range(nstep):
+        Nx = nstart * 2**i
+        dx = (domain[1] - domain[0]) / Nx
+
+        t = 0.
+        V = np.empty((2, Nx))
+        init_solution(V, domain)
+
+        fmodel = np.empty_like(V)
+        fluxes = np.empty((2, Nx-1))
+        lambdas = np.empty(Nx)
+        max_lambdas = np.empty(Nx-1)
 
     
-print(f"Initial time t = {t}")
-t_start = time.time()
-update_to_time(T)
-t_end = time.time()
-print(f"End of simulation, t = {t}")
-print(f"Elapsed time: {t_end - t_start}")
+        #print(f"Initial time t = {t}")
+        print(f"Running with N = {Nx} :", end=" ")
+        t_start = time.time()
+        update_to_time(T)
+        t_end = time.time()
+        print(f"{t_end - t_start}")
+        #print(f"End of simulation, t = {t}")
+        #print(f"Elapsed time: {t_end - t_start}")
 
-print(f"mean(h) = {np.mean(V[0, :])}")
-np.savetxt("sol-cpu", V[0, :])
+        #print(f"mean(h) = {np.mean(V[0, :])}")
+        #np.savetxt("sol-cpu", V[0, :])
+        f.write(str(Nx) + "\t" + str(t_end - t_start) + "\n")
     

@@ -3,6 +3,9 @@
 #include <chrono>
 #include <fstream>
 
+#include <unistd.h>
+#include <limits.h>
+
 #include <Eigen/Dense>
 
 
@@ -108,34 +111,51 @@ double update_to_time(ArrayType2d& V, ArrayType2d& Vold, ArrayType1d& lambdas,
 
 int main() {
     constexpr Domain domain(0., 1.);
-    constexpr std::size_t Nx = 16384;
     constexpr double T = 2.0;
-    constexpr double dx = (domain.x_end - domain.x_start) / Nx;
     constexpr double tol = 1e-15;
 
-
-    Eigen::Array<double, 2, Eigen::Dynamic> V(2, Nx);
-    init_solution(V, domain);
-
-    Eigen::Array<double, 2, Eigen::Dynamic> Vold(2, Nx);
-    Eigen::Array<double, 1, Eigen::Dynamic> lambdas(Nx);
+    constexpr std::size_t nstart = 256;
+    constexpr std::size_t nstep = 10;
     
-    double t = 0;
-    std::cout << "Initial time t = " << t << std::endl;
+    char hostnameC[HOST_NAME_MAX];
+    gethostname(hostnameC, HOST_NAME_MAX);
+    std::string hostname = hostnameC;
 
-    auto time_start = std::chrono::high_resolution_clock::now();
-    t = update_to_time(V, Vold, lambdas, t, T, dx, tol);
-    auto time_end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed_seconds = time_end - time_start;
-    
-    std::cout << "Elapsed time: " << elapsed_seconds.count() << "s" << std::endl;    
-    std::cout << "End of simulation, t = " << t << std::endl;
-    
-    std::cout << "mean(h) = " << V.row(0).mean() << std::endl;
+    std::ofstream timings("RunningOn" + hostname);
 
-    const Eigen::IOFormat to_file(Eigen::FullPrecision, Eigen::DontAlignCols, "\n", "\n");
-    std::ofstream file("sol-cpu");
-    file << V.row(0).format(to_file);
+    std::size_t Nx = nstart;
+    for(std::size_t i=0; i < nstep; ++i, Nx *= 2) {
+        double dx = (domain.x_end - domain.x_start) / Nx;
+        
+        Eigen::Array<double, 2, Eigen::Dynamic> V(2, Nx);
+        init_solution(V, domain);
+
+        Eigen::Array<double, 2, Eigen::Dynamic> Vold(2, Nx);
+        Eigen::Array<double, 1, Eigen::Dynamic> lambdas(Nx);
+    
+        double t = 0;
+        std::cout << "Running with N = " << Nx << " : ";
+        //std::cout << "Initial time t = " << t << std::endl;
+
+        auto time_start = std::chrono::high_resolution_clock::now();
+        t = update_to_time(V, Vold, lambdas, t, T, dx, tol);
+        auto time_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed_seconds = time_end - time_start;
+
+        std::cout << elapsed_seconds.count() << "s" << std::endl;
+        //std::cout << "Elapsed time: " << elapsed_seconds.count() << "s" << std::endl;    
+        //std::cout << "End of simulation, t = " << t << std::endl;
+    
+        //std::cout << "mean(h) = " << V.row(0).mean() << std::endl;
+
+        //const Eigen::IOFormat to_file(Eigen::FullPrecision, Eigen::DontAlignCols, "\n", "\n");
+        //std::ofstream file("solution");
+        //file << V.row(0).format(to_file);
+
+        timings << Nx << "\t" << elapsed_seconds.count() << std::endl;
+    }
+
+    timings.close();
     
     return 0;
 }

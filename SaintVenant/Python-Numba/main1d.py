@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 import time
-
+import socket
 
 
 def init_solution(V, domain):
@@ -79,31 +79,39 @@ def update_to_time(t, tfinal, V, Vold, lambdas, dx, tol):
 
 
 domain = np.array([0, 1])
-Nx = 2**14
-
 T = 2.0
-dx = (domain[1] - domain[0]) / Nx
+nstart = 256
+nstep = 10
 
-t = 0.
-V = np.empty((Nx, 2))
-init_solution(V, domain)
+with open("RunningOn" + socket.gethostname(), "w") as f:
+    for i in range(nstep):
+        Nx = nstart * 2**i
+        dx = (domain[1] - domain[0]) / Nx
 
-Vold = np.empty_like(V)
-lambdas = np.empty(Nx)
+        t = 0.
+        V = np.empty((Nx, 2))
+        Vold = np.empty_like(V)
+        lambdas = np.empty(Nx)
 
-tol = np.finfo(np.float64).eps
+        tol = np.finfo(np.float64).eps
 
-print("Warming up...", end=" ")
-update_to_time(t, tol, V, Vold, lambdas, dx, tol)
-print("Done")
+        if i == 0:
+            init_solution(V, domain)
+            print("Warming up...", end=" ")
+            update_to_time(t, tol, V, Vold, lambdas, dx, tol)
+            print("Done")
 
-init_solution(V, domain)
-print(f"Initial time t = {t}")
-t_start = time.time()
-t = update_to_time(t, T, V, Vold, lambdas, dx, tol)
-t_end = time.time()
-print(f"End of simulation, t = {t}")
-print(f"Elapsed time: {t_end - t_start}")
+        init_solution(V, domain)
+        
+        #print(f"Initial time t = {t}")
+        print(f"Running with N = {Nx} :", end=" ")
+        t_start = time.time()
+        t = update_to_time(t, T, V, Vold, lambdas, dx, tol)
+        t_end = time.time()
+        print(f"{t_end - t_start}")
+        #print(f"End of simulation, t = {t}")
+        #print(f"Elapsed time: {t_end - t_start}")
 
-print(f"mean(h) = {np.mean(V[:, 0])}")
-np.savetxt("sol-cpu", V[:, 0])
+        #print(f"mean(h) = {np.mean(V[:, 0])}")
+        #np.savetxt("sol-cpu", V[:, 0])
+        f.write(str(Nx) + "\t" + str(t_end - t_start) + "\n")
